@@ -1,0 +1,187 @@
+<?php
+session_start();
+if (!isset($_SESSION['username'])) {
+    header('Location: index.php');
+    exit;
+}
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="Browse and manage all your digital documents in DigiLocker.">
+  <title>DigiLocker — My Documents</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+</head>
+<body>
+  <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-logo">Digi<span>Locker</span></div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section-title">Main Menu</div>
+      <a href="dashboard.php"><span class="nav-icon"><i class="fas fa-th-large"></i></span> Dashboard</a>
+      <a href="documents.php" class="active"><span class="nav-icon"><i class="fas fa-folder-open"></i></span> My Documents</a>
+      <a href="upload.php"><span class="nav-icon"><i class="fas fa-cloud-arrow-up"></i></span> Upload Document</a>
+      <div class="nav-section-title">Account</div>
+      <a href="profile.php"><span class="nav-icon"><i class="fas fa-user-circle"></i></span> My Profile</a>
+      <a href="#" onclick="logout()"><span class="nav-icon"><i class="fas fa-right-from-bracket"></i></span> Logout</a>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="sidebar-user">
+        <div class="user-avatar" id="sidebarAvatar">U</div>
+        <div class="user-info">
+          <div class="user-name" id="sidebarName">User</div>
+          <div class="user-email" id="sidebarEmail">user@email.com</div>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <div class="app-layout">
+    <div class="main-content">
+      <header class="topbar">
+        <div class="topbar-left">
+          <div class="hamburger" onclick="toggleSidebar()"><i class="fas fa-bars"></i></div>
+          <h1 class="page-title">My Documents</h1>
+        </div>
+        <div class="topbar-right">
+          <div class="search-box">
+            <i class="fas fa-search search-icon"></i>
+            <input type="text" placeholder="Search documents..." id="docSearch" oninput="filterDocuments()">
+          </div>
+          <a href="upload.php" class="btn btn-primary btn-sm"><i class="fas fa-plus"></i> Upload</a>
+        </div>
+      </header>
+
+      <div class="page-content">
+        <!-- Category Tabs -->
+        <div class="category-tabs" id="categoryTabs">
+          <button class="category-tab active" data-cat="all" onclick="setCategory('all', this)">All</button>
+          <button class="category-tab" data-cat="identity" onclick="setCategory('identity', this)">🪪 Identity</button>
+          <button class="category-tab" data-cat="education" onclick="setCategory('education', this)">🎓 Education</button>
+          <button class="category-tab" data-cat="vehicle" onclick="setCategory('vehicle', this)">🚗 Vehicle</button>
+          <button class="category-tab" data-cat="insurance" onclick="setCategory('insurance', this)">🛡️ Insurance</button>
+          <button class="category-tab" data-cat="other" onclick="setCategory('other', this)">📄 Other</button>
+        </div>
+
+        <!-- Document Grid -->
+        <div class="docs-grid" id="docsGrid">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Confirmation Modal -->
+  <div class="modal-overlay" id="deleteModal">
+    <div class="modal">
+      <h3><i class="fas fa-triangle-exclamation" style="color:var(--red-500); margin-right:8px;"></i>Delete Document</h3>
+      <p>Are you sure you want to delete this document? This action cannot be undone.</p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary btn-sm" onclick="closeModal('deleteModal')">Cancel</button>
+        <button class="btn btn-danger btn-sm" id="confirmDeleteBtn">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast-container" id="toastContainer"></div>
+  <script src="js/app.js"></script>
+  <script>
+    let currentCategory = 'all';
+    let allDocs = [];
+
+    async function init() {
+      await populateSidebar();
+      allDocs = await getDocuments();
+      filterDocuments();
+    }
+
+    function setCategory(cat, btn) {
+      currentCategory = cat;
+      document.querySelectorAll('.category-tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      filterDocuments();
+    }
+
+    function filterDocuments() {
+      const search = (document.getElementById('docSearch').value || '').toLowerCase();
+      const filtered = allDocs.filter(d => {
+        const matchCat    = currentCategory === 'all' || d.category === currentCategory;
+        const matchSearch = d.name.toLowerCase().includes(search) || d.category.toLowerCase().includes(search);
+        return matchCat && matchSearch;
+      });
+      renderDocGrid(filtered);
+    }
+
+    function renderDocGrid(docs) {
+      const grid = document.getElementById('docsGrid');
+      if (!docs.length) {
+        grid.innerHTML = `
+          <div class="empty-state" style="grid-column:1/-1;">
+            <div class="empty-icon">📂</div>
+            <h3>No documents found</h3>
+            <p>Upload your first document to get started</p>
+            <a href="upload.php" class="btn btn-primary"><i class="fas fa-cloud-arrow-up"></i> Upload Document</a>
+          </div>`;
+        return;
+      }
+      grid.innerHTML = docs.map((doc, i) => `
+        <div class="doc-card" style="animation-delay:${i * .05}s">
+          <div class="doc-card-header">
+            <div class="doc-icon-lg ${doc.category}" style="background:${getCategoryBg(doc.category)}; color:${getCategoryColor(doc.category)};">
+              ${getCategoryIcon(doc.category)}
+            </div>
+            <div class="doc-details">
+              <h4 title="${doc.name}">${doc.name}</h4>
+              <div class="doc-category">${capitalize(doc.category)}</div>
+            </div>
+          </div>
+          <div class="doc-card-body">
+            <div class="doc-card-meta">
+              <span><i class="fas fa-calendar"></i> ${doc.date}</span>
+              <span><i class="fas fa-hdd"></i> ${doc.size || 'N/A'}</span>
+            </div>
+            <div style="margin-top:10px;">
+              <span class="status-badge ${doc.verified ? 'verified' : 'pending'}">
+                <i class="fas fa-${doc.verified ? 'circle-check' : 'clock'}"></i>
+                ${doc.verified ? 'Verified' : 'Pending'}
+              </span>
+            </div>
+          </div>
+          <div class="doc-card-actions">
+            <button class="btn btn-sm doc-action-view" onclick="viewDocument('${doc.id}')"><i class="fas fa-eye"></i> View</button>
+            <button class="btn btn-sm doc-action-download" onclick="downloadDocument('${doc.id}')"><i class="fas fa-download"></i></button>
+            <button class="btn btn-sm doc-action-delete" onclick="promptDelete('${doc.id}')"><i class="fas fa-trash"></i></button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    let deleteTargetId = null;
+    function promptDelete(id) {
+      deleteTargetId = id;
+      document.getElementById('deleteModal').classList.add('show');
+    }
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('show');
+    }
+    document.getElementById('confirmDeleteBtn').addEventListener('click', async function () {
+      if (deleteTargetId) {
+        await deleteDocument(deleteTargetId);
+        showToast('Document deleted', 'success');
+        closeModal('deleteModal');
+        allDocs = allDocs.filter(d => d.id !== deleteTargetId);
+        filterDocuments();
+        deleteTargetId = null;
+      }
+    });
+
+    init();
+  </script>
+</body>
+</html>
